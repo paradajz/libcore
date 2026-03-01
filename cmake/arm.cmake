@@ -19,9 +19,8 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release)
 endif()
 
-set(CMAKE_CXX_FLAGS "")
 set(CMAKE_C_FLAGS "")
-SET(CMAKE_ASM_FLAGS "")
+set(CMAKE_ASM_FLAGS "")
 set(CMAKE_EXE_LINKER_FLAGS "")
 set(CMAKE_C_FLAGS_DEBUG "")
 set(CMAKE_CXX_FLAGS_DEBUG "")
@@ -30,13 +29,7 @@ set(CMAKE_C_FLAGS_RELEASE "")
 set(CMAKE_CXX_FLAGS_RELEASE "")
 set(CMAKE_ASM_FLAGS_RELEASE "")
 
-set(CORE_OPT
-    $<$<CONFIG:Debug>:-Og -g -gdwarf-2>
-    $<$<CONFIG:Release>:-Os>
-)
-
-set(CORE_COMMON_FLAGS
-    ${CORE_OPT}
+add_compile_options(
     -Wall
     -fdata-sections
     -ffunction-sections
@@ -48,33 +41,36 @@ set(CORE_COMMON_FLAGS
     -mno-unaligned-access
 )
 
-set(CORE_CXX_FLAGS
-    ${CORE_COMMON_FLAGS}
-    -std=c++17
-    -fno-rtti
-    -fno-exceptions
-    -fpermissive
-    -fno-threadsafe-statics
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+  add_compile_options(-Og -g -gdwarf-2)
+  add_link_options(-g -gdwarf-2)
+elseif(CMAKE_BUILD_TYPE STREQUAL "Release")
+  add_compile_options(-Os)
+endif()
+
+set(CMAKE_CXX_FLAGS
+    "-std=c++17 \
+    -fno-rtti \
+    -fno-exceptions \
+    -fpermissive \
+    -fno-threadsafe-statics"
 )
 
-set(CORE_C_FLAGS
-    ${CORE_COMMON_FLAGS}
-    -std=gnu11
-    -Wno-parentheses-equality
-    -Wno-unused-value
-    -Wno-implicit-function-declaration
-    -Wno-array-bounds
+set(CMAKE_C_FLAGS
+    "-std=gnu11 \
+    -Wno-parentheses-equality \
+    -Wno-unused-value \
+    -Wno-implicit-function-declaration \
+    -Wno-array-bounds"
 )
 
-set(CORE_ASM_FLAGS
-    ${CORE_COMMON_FLAGS}
-    -x assembler-with-cpp
+set(CMAKE_ASM_FLAGS
+    "-x assembler-with-cpp"
 )
 
-set(CORE_LINK_FLAGS
-    ${CORE_OPT}
-    -Wl,--gc-sections
-    -Wl,--print-memory-usage
+set(CMAKE_EXE_LINKER_FLAGS
+    "-Wl,--gc-sections \
+    -Wl,--print-memory-usage"
 )
 
 set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)

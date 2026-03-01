@@ -43,71 +43,74 @@ adc_bits=$($yaml_parser "$yaml_file" adc-bits)
 cmake_mcu_target=mcu
 cmake_usb_target=usb
 
+check_define_symbols()
+{
+    if [[ $($yaml_parser "$yaml_file" define-symbols) != "null" ]]
+    then
+        total_symbols=$($yaml_parser "$yaml_file" define-symbols --length)
+
+        for ((i=0;i<total_symbols;i++))
+        do
+            symbol=$($yaml_parser "$yaml_file" define-symbols.["$i"])
+            printf "%s\n" "target_compile_definitions($cmake_mcu_target PUBLIC $symbol)" >> "$out_cmakelists"
+        done
+    fi
+}
+
+check_include_dirs()
+{
+    if [[ $($yaml_parser "$yaml_file" include-dirs) != "null" ]]
+    then
+        total_include_dirs=$($yaml_parser "$yaml_file" include-dirs --length)
+
+        for ((i=0;i<total_include_dirs;i++))
+        do
+            dir=$($yaml_parser "$yaml_file" include-dirs.["$i"])
+            printf "%s\n" "target_include_directories($cmake_mcu_target PUBLIC \"${script_dir}/../$dir\")" >> "$out_cmakelists"
+        done
+    fi
+}
+
+check_sources()
+{
+    if [[ $($yaml_parser "$yaml_file" sources) != "null" ]]
+    then
+        total_sources=$($yaml_parser "$yaml_file" sources --length)
+
+        for ((i=0;i<total_sources;i++))
+        do
+            source=$($yaml_parser "$yaml_file" sources.["$i"])
+            printf "%s\n" "target_sources($cmake_mcu_target PRIVATE \"${script_dir}/../$source\")" >> "$out_cmakelists"
+        done
+    fi
+}
+
 echo "Generating configuration for MCU: $mcu"
 
 # Common (real and stub MCU)
 {
-    printf "%s\n" "set(CMAKE_TOOLCHAIN_FILE ${script_dir}/../cmake/$arch.cmake)"
-    printf "%s\n" "project($cmake_mcu_target)"
     printf "%s\n" "cmake_minimum_required(VERSION 3.22)"
-    printf "%s\n" "add_library($cmake_mcu_target OBJECT)"
-    printf "%s\n" "set_target_properties($cmake_mcu_target PROPERTIES LINKER_LANGUAGE CXX)"
+    printf "%s\n" "set(CMAKE_TOOLCHAIN_FILE ${script_dir}/../cmake/$arch.cmake)"
     printf "%s\n" "set(CORE_MCU_GEN_DIR $gen_dir)"
-    printf "%s\n" "target_include_directories($cmake_mcu_target PUBLIC $gen_dir)"
-    printf "%s\n" "set(CORE_MCU_FLAGS \"\")"
 } > "$out_cmakelists"
-
-if [[ $($yaml_parser "$yaml_file" define-symbols) != "null" ]]
-then
-    total_symbols=$($yaml_parser "$yaml_file" define-symbols --length)
-
-    for ((i=0;i<total_symbols;i++))
-    do
-        symbol=$($yaml_parser "$yaml_file" define-symbols.["$i"])
-        printf "%s\n" "target_compile_definitions($cmake_mcu_target PUBLIC $symbol)" >> "$out_cmakelists"
-    done
-fi
-
-if [[ $($yaml_parser "$yaml_file" include-dirs) != "null" ]]
-then
-    total_include_dirs=$($yaml_parser "$yaml_file" include-dirs --length)
-
-    for ((i=0;i<total_include_dirs;i++))
-    do
-        dir=$($yaml_parser "$yaml_file" include-dirs.["$i"])
-        printf "%s\n" "target_include_directories($cmake_mcu_target PUBLIC \"${script_dir}/../$dir\")" >> "$out_cmakelists"
-    done
-fi
-
-if [[ $($yaml_parser "$yaml_file" sources) != "null" ]]
-then
-    total_sources=$($yaml_parser "$yaml_file" sources --length)
-
-    for ((i=0;i<total_sources;i++))
-    do
-        source=$($yaml_parser "$yaml_file" sources.["$i"])
-        printf "%s\n" "target_sources($cmake_mcu_target PRIVATE \"${script_dir}/../$source\")" >> "$out_cmakelists"
-    done
-fi
-
-{
-    printf "%s\n" "target_compile_definitions($cmake_mcu_target PUBLIC CORE_MCU_UID_BITS=${uid_bits})"
-    printf "%s\n" "target_compile_definitions($cmake_mcu_target PUBLIC CORE_MCU_ADC_MAX_VALUE=$((2 ** adc_bits - 1)))"
-} >> "$out_cmakelists"
 
 if [[ $mcu == "stub" ]]
 then
     # Stub MCU only
     {
+        printf "%s\n" "project($cmake_mcu_target)"
+        printf "%s\n" "add_library($cmake_mcu_target OBJECT)"
         printf "%s\n" "target_compile_definitions($cmake_mcu_target PUBLIC CORE_MCU_MAX_UART_INTERFACES=0)"
         printf "%s\n" "target_compile_definitions($cmake_mcu_target PUBLIC CORE_MCU_MAX_I2C_INTERFACES=0)"
     } >> "$out_cmakelists"
+
+    check_define_symbols
+    check_include_dirs
+    check_sources
 else
     # Real MCU only
     if [[ $($yaml_parser "$yaml_file" dl-deps) != "null" ]]
     then
-        command -v wget >/dev/null 2>&1 || { echo "wget is not installed"; exit 1; }
-
         total_deps=$($yaml_parser "$yaml_file" dl-deps --length)
         dep_dir="${script_dir}"/../deps/"${mcu}"
         mkdir -p "$dep_dir"
@@ -145,42 +148,42 @@ else
 
     if [[ $arch == "avr" ]]
     then
-        printf "%s\n" "list(APPEND CORE_MCU_FLAGS \"-mmcu=$mcu\")" >> "$out_cmakelists"
+        printf "%s\n" "add_compile_options(-mmcu=$mcu)" >> "$out_cmakelists"
+        printf "%s\n" "add_link_options(-mmcu=$mcu)" >> "$out_cmakelists"
     fi
 
     if [[ $cpu != "null" ]]
     then
         {
-            printf "%s\n" "set(CORE_MCU_CPU $cpu)"
-            printf "%s\n" "list(APPEND CORE_MCU_FLAGS \"-mcpu=$cpu\")"
+            printf "%s\n" "add_compile_options(-mcpu=$cpu)"
+            printf "%s\n" "add_link_options(-mcpu=$cpu)"
         } >> "$out_cmakelists"
     fi
 
     if [[ "$fpu" != "null" ]]
     then
-        printf "%s\n" "list(APPEND CORE_MCU_FLAGS \"-mfpu=$fpu\")" >> "$out_cmakelists"
+        printf "%s\n" "add_compile_options(-mfpu=$fpu)" >> "$out_cmakelists"
+        printf "%s\n" "add_link_options(-mfpu=$fpu)" >> "$out_cmakelists"
     fi
 
     if [[ "$float_abi" != "null" ]]
     then
-        printf "%s\n" "list(APPEND CORE_MCU_FLAGS \"-mfloat-abi=$float_abi\")" >> "$out_cmakelists"
+        printf "%s\n" "add_compile_options(-mfloat-abi=$float_abi)" >> "$out_cmakelists"
+        printf "%s\n" "add_link_options(-mfloat-abi=$float_abi)" >> "$out_cmakelists"
     fi
 
     {
+        printf "%s\n" "project($cmake_mcu_target)"
+        printf "%s\n" "add_library($cmake_mcu_target OBJECT)"
         printf "%s\n" "set(CORE_MCU_MODEL $mcu)"
         printf "%s\n" "set(CORE_MCU_ARCH $arch)"
         printf "%s\n" "set(CORE_MCU_VENDOR $vendor)"
         printf "%s\n" "set(CORE_MCU_FAMILY $mcu_family)"
-        printf "%s\n" "set(CORE_MCU_CPU $cpu)"
         printf "%s\n" "set(CORE_MCU_FW_METADATA_OFFSET $app_metadata_offset)"
         printf "%s\n" "set(CORE_MCU_LINKER_FILE $script_dir/../src/arch/$arch/$vendor/variants/$mcu_family/$mcu/$mcu.ld)"
+        printf "%s%s\n" "target_link_options($cmake_mcu_target PUBLIC " '-T ${CORE_MCU_LINKER_FILE})'
         printf "%s%s\n" "target_compile_definitions($cmake_mcu_target PUBLIC CORE_MCU_ARCH_" "${arch^^})"
         printf "%s%s\n" "target_compile_definitions($cmake_mcu_target PUBLIC CORE_MCU_VENDOR_" "${vendor^^})"
-        printf "%s%s\n" "target_link_options($cmake_mcu_target PUBLIC " '${CORE_MCU_FLAGS} -T ${CORE_MCU_LINKER_FILE} ${CORE_LINK_FLAGS})'
-        printf "%s\n" "target_compile_options($cmake_mcu_target PUBLIC"
-        printf "%s\n" '$<$<COMPILE_LANGUAGE:ASM>:${CORE_ASM_FLAGS}>'
-        printf "%s\n" '$<$<COMPILE_LANGUAGE:CXX>:${CORE_CXX_FLAGS} ${CORE_MCU_FLAGS}>'
-        printf "%s\n" '$<$<COMPILE_LANGUAGE:C>:${CORE_C_FLAGS} ${CORE_MCU_FLAGS}>)'
     } >> "$out_cmakelists"
 
     if [[ ("$external_freq" != "") && ("$external_freq" != "null") ]]
@@ -189,6 +192,10 @@ else
     fi
 
     printf "%s\n" "target_compile_definitions($cmake_mcu_target PUBLIC CORE_MCU_CPU_FREQ_MHZ=$freq)" >> "$out_cmakelists"
+
+    check_define_symbols
+    check_include_dirs
+    check_sources
 
     uf2_id=$($yaml_parser "$yaml_file" uf2-id)
 
@@ -260,8 +267,8 @@ else
         printf "%s\n" "}" >> "$out_header"
 
         {
-            printf "%s\n" "target_link_options($cmake_mcu_target PUBLIC -Wl,--defsym=CORE_MCU_FLASH_SIZE=$flash_size)"
             printf "%s%x%s\n" "set(CORE_MCU_FLASH_START_ADDR 0x" "$flash_start" ")"
+            printf "%s\n" "target_link_options($cmake_mcu_target PUBLIC -Wl,--defsym=CORE_MCU_FLASH_SIZE=$flash_size)"
             printf "%s%s\n" "target_link_options($cmake_mcu_target PUBLIC -Wl,--defsym=CORE_MCU_FLASH_START_ADDR=" '${CORE_MCU_FLASH_START_ADDR})'
         } >> "$out_cmakelists"
     fi
@@ -313,11 +320,6 @@ else
         then
             {
                 printf "%s\n" "add_library($cmake_usb_target OBJECT)"
-                printf "%s\n" "set_target_properties($cmake_usb_target PROPERTIES LINKER_LANGUAGE C)"
-                printf "%s\n" "target_compile_options($cmake_usb_target PUBLIC"
-                printf "%s\n" '$<$<COMPILE_LANGUAGE:ASM>:${CORE_ASM_FLAGS}>'
-                printf "%s\n" '$<$<COMPILE_LANGUAGE:CXX>:${CORE_CXX_FLAGS} ${CORE_MCU_FLAGS}>'
-                printf "%s\n" '$<$<COMPILE_LANGUAGE:C>:${CORE_C_FLAGS} ${CORE_MCU_FLAGS}>)'
             } >> "$out_cmakelists"
 
             if [[ $($yaml_parser "$yaml_file" usb.define-symbols) != "null" ]]
@@ -362,3 +364,10 @@ else
         fi
     fi
 fi
+
+{
+    printf "%s\n" "set_target_properties($cmake_mcu_target PROPERTIES LINKER_LANGUAGE CXX)"
+    printf "%s\n" "target_include_directories($cmake_mcu_target PUBLIC $gen_dir)"
+    printf "%s\n" "target_compile_definitions($cmake_mcu_target PUBLIC CORE_MCU_UID_BITS=${uid_bits})"
+    printf "%s\n" "target_compile_definitions($cmake_mcu_target PUBLIC CORE_MCU_ADC_MAX_VALUE=$((2 ** adc_bits - 1)))"
+} >> "$out_cmakelists"
